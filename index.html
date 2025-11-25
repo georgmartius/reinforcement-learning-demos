@@ -478,10 +478,10 @@
       */
      function getViewUrl(file) {
        // 1) Pages site (production)
-       if (window.location.hostname.endsWith('github.io')) {
-         const prefix = getPagesPrefix(); // e.g. '/repo/' or '/'
-         return window.location.origin + prefix + encodePath(file.path);
-       }
+       //if (window.location.hostname.endsWith('github.io')) {
+       //  const prefix = getPagesPrefix(); // e.g. '/repo/' or '/'
+       //  return window.location.origin + prefix + encodePath(file.path);
+       //}
 
        // 2) githack - reliable raw HTML serving for JS demos (production CDN)
        // raw.githack.com format: https://raw.githack.com/<owner>/<repo>/<branch>/<path>
