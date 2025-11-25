@@ -1,510 +1,516 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reinforcement Learning Demos</title>
-  <!--
-    ============================================================
-    REINFORCEMENT LEARNING DEMOS - INDEX PAGE
-    ============================================================
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reinforcement Learning Demos</title>
+    <!--
+         ============================================================
+         REINFORCEMENT LEARNING DEMOS - INDEX PAGE
+         ============================================================
 
-    This page dynamically lists HTML demo files found inside the
-    repository folders using the GitHub Contents API.
+         This page dynamically lists HTML demo files found inside the
+         repository folders using the GitHub Contents API.
 
-    HOW IT WORKS:
-    1. On page load, fetches the repository root contents from GitHub API
-    2. For each directory found (excluding hidden folders like .git),
-       fetches the contents of that directory
-    3. Filters for .html files and displays them grouped by folder
-    4. Each file shows:
+         HOW IT WORKS:
+         1. On page load, fetches the repository root contents from GitHub API
+         2. For each directory found (excluding hidden folders like .git),
+         fetches the contents of that directory
+         3. Filters for .html files and displays them grouped by folder
+         4. Each file shows:
        - The file name
        - A link to view the file on GitHub (html_url)
        - A "View Demo" link that renders it via htmlpreview.github.io
 
-    CONFIGURATION:
-    To reuse this page for a different repository, change these values
-    in the CONFIG object below:
-      - owner: GitHub username or organization
-      - repo: Repository name
-      - branch: Branch name (default: 'main')
+         CONFIGURATION:
+         To reuse this page for a different repository, change these values
+         in the CONFIG object below:
+       - owner: GitHub username or organization
+       - repo: Repository name
+       - branch: Branch name (default: 'main')
 
-    RATE LIMITS:
-    - Unauthenticated GitHub API: 60 requests/hour
-    - With Personal Access Token: 5,000 requests/hour
-    - Users can enter a PAT in the optional field to increase limits
+         RATE LIMITS:
+       - Unauthenticated GitHub API: 60 requests/hour
+       - With Personal Access Token: 5,000 requests/hour
+       - Users can enter a PAT in the optional field to increase limits
 
-    ============================================================
-  -->
-  <style>
-    /* Reset and base styles */
-    *, *::before, *::after {
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      line-height: 1.6;
-      color: #1f2937;
-      background-color: #f9fafb;
-      margin: 0;
-      padding: 16px;
-    }
-
-    /* Container */
-    .container {
-      max-width: 900px;
-      margin: 0 auto;
-    }
-
-    /* Header */
-    header {
-      text-align: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid #e5e7eb;
-    }
-
-    h1 {
-      font-size: 1.75rem;
-      margin: 0 0 8px 0;
-      color: #111827;
-    }
-
-    .subtitle {
-      color: #6b7280;
-      font-size: 0.95rem;
-      margin: 0;
-    }
-
-    /* Info box for rate limits */
-    .info-box {
-      background-color: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 8px;
-      padding: 12px 16px;
-      margin-bottom: 20px;
-      font-size: 0.9rem;
-    }
-
-    .info-box summary {
-      cursor: pointer;
-      color: #1d4ed8;
-      font-weight: 500;
-    }
-
-    .info-box p {
-      margin: 8px 0 0 0;
-      color: #374151;
-    }
-
-    /* Token input section */
-    .token-section {
-      margin-top: 12px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .token-section label {
-      font-size: 0.85rem;
-      color: #374151;
-    }
-
-    .token-section input {
-      flex: 1;
-      min-width: 200px;
-      padding: 6px 10px;
-      border: 1px solid #d1d5db;
-      border-radius: 4px;
-      font-size: 0.9rem;
-    }
-
-    .token-section button {
-      padding: 6px 14px;
-      background-color: #2563eb;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 0.9rem;
-    }
-
-    .token-section button:hover {
-      background-color: #1d4ed8;
-    }
-
-    /* Loading state */
-    .loading {
-      text-align: center;
-      padding: 40px 20px;
-      color: #6b7280;
-    }
-
-    .spinner {
-      display: inline-block;
-      width: 24px;
-      height: 24px;
-      border: 3px solid #e5e7eb;
-      border-top-color: #3b82f6;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-bottom: 12px;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    /* Error message */
-    .error {
-      background-color: #fef2f2;
-      border: 1px solid #fecaca;
-      color: #991b1b;
-      padding: 16px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-    }
-
-    .error strong {
-      display: block;
-      margin-bottom: 4px;
-    }
-
-    /* Folder sections */
-    .folder-section {
-      background-color: white;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      margin-bottom: 16px;
-      overflow: hidden;
-    }
-
-    .folder-header {
-      background-color: #f3f4f6;
-      padding: 12px 16px;
-      font-weight: 600;
-      color: #374151;
-      border-bottom: 1px solid #e5e7eb;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .folder-icon {
-      color: #6b7280;
-    }
-
-    /* File list */
-    .file-list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-
-    .file-item {
-      padding: 12px 16px;
-      border-bottom: 1px solid #f3f4f6;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 8px 16px;
-    }
-
-    .file-item:last-child {
-      border-bottom: none;
-    }
-
-    .file-name {
-      font-weight: 500;
-      color: #1f2937;
-      flex: 1;
-      min-width: 150px;
-    }
-
-    .file-links {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    .file-links a {
-      font-size: 0.85rem;
-      text-decoration: none;
-      padding: 4px 10px;
-      border-radius: 4px;
-      transition: background-color 0.15s;
-    }
-
-    .link-github {
-      color: #374151;
-      background-color: #f3f4f6;
-    }
-
-    .link-github:hover {
-      background-color: #e5e7eb;
-    }
-
-    .link-view {
-      color: white;
-      background-color: #10b981;
-    }
-
-    .link-view:hover {
-      background-color: #059669;
-    }
-
-    /* Empty folder message */
-    .empty-folder {
-      padding: 16px;
-      color: #6b7280;
-      font-style: italic;
-    }
-
-    /* No folders message */
-    .no-content {
-      text-align: center;
-      padding: 40px 20px;
-      color: #6b7280;
-    }
-
-    /* Footer */
-    footer {
-      margin-top: 32px;
-      padding-top: 16px;
-      border-top: 1px solid #e5e7eb;
-      text-align: center;
-      font-size: 0.85rem;
-      color: #6b7280;
-    }
-
-    footer a {
-      color: #2563eb;
-      text-decoration: none;
-    }
-
-    footer a:hover {
-      text-decoration: underline;
-    }
-
-    /* Responsive adjustments */
-    @media (max-width: 600px) {
-      body {
-        padding: 12px;
-      }
-
-      h1 {
-        font-size: 1.4rem;
-      }
-
-      .file-item {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-
-      .file-name {
-        width: 100%;
-      }
-
-      .token-section {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .token-section input {
-        min-width: unset;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <header>
-      <h1>Reinforcement Learning Demos</h1>
-      <p class="subtitle">Interactive browser-based demonstrations</p>
-    </header>
-
-    <!-- Rate limit information and optional token input -->
-    <details class="info-box">
-      <summary>ℹ️ About GitHub API Rate Limits</summary>
-      <p>
-        This page uses the GitHub API to list demo files. Without authentication,
-        you're limited to <strong>60 requests per hour</strong>. If you see rate limit errors,
-        you can enter a <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">
-        Personal Access Token</a> (no special scopes needed for public repos) to increase the limit to
-        <strong>5,000 requests per hour</strong>.
-      </p>
-      <div class="token-section">
-        <label for="github-token">Personal Access Token (optional):</label>
-        <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxx">
-        <button id="reload-btn">Reload with Token</button>
-      </div>
-    </details>
-
-    <!-- Main content area - populated by JavaScript -->
-    <main id="content">
-      <div class="loading">
-        <div class="spinner"></div>
-        <div>Loading demos...</div>
-      </div>
-    </main>
-
-    <footer>
-      <p>
-        View source on
-        <a href="https://github.com/georgmartius/reinforcement-learning-demos" target="_blank" rel="noopener">
-          GitHub
-        </a>
-      </p>
-    </footer>
-  </div>
-
-  <script>
-    /**
-     * ============================================================
-     * CONFIGURATION
-     * ============================================================
-     * Change these values to use this page with a different repository.
-     */
-    const CONFIG = {
-      owner: 'georgmartius',           // GitHub username or organization
-      repo: 'reinforcement-learning-demos',  // Repository name
-      branch: 'main'                   // Default branch
-    };
-
-    /**
-     * GitHub API base URL
-     */
-    const API_BASE = 'https://api.github.com';
-
-    /**
-     * Get the authorization header if a token is provided
-     * @returns {Object} Headers object for fetch requests
-     */
-    function getHeaders() {
-      const headers = {
-        'Accept': 'application/vnd.github+json'
-      };
-      const token = document.getElementById('github-token').value.trim();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      return headers;
-    }
-
-    /**
-     * Fetch contents of a path in the repository
-     * Uses encodeURIComponent to handle paths with spaces or special characters
-     * @param {string} path - Path within the repository (empty string for root)
-     * @returns {Promise<Array>} Array of content items
-     */
-    async function fetchContents(path = '') {
-      // Build the API URL, encoding the path to handle spaces and special characters
-      const encodedPath = path ? encodeURIComponent(path) : '';
-      const url = `${API_BASE}/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${encodedPath}`;
-
-      const response = await fetch(url, { headers: getHeaders() });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.message || response.statusText;
-
-        // Check for rate limit
-        if (response.status === 403 && errorMessage.includes('rate limit')) {
-          throw new Error(
-            'GitHub API rate limit exceeded. Please wait or add a Personal Access Token above to increase your limit.'
-          );
-        }
-
-        throw new Error(`GitHub API error: ${errorMessage} (${response.status})`);
-      }
-
-      return response.json();
-    }
-
-    /**
-     * Filter for directories (excluding hidden folders like .git)
-     * @param {Array} contents - Array of content items from GitHub API
-     * @returns {Array} Filtered array of directory items
-     */
-    function filterDirectories(contents) {
-      return contents.filter(item =>
-        item.type === 'dir' && !item.name.startsWith('.')
-      );
-    }
-
-    /**
-     * Filter for HTML files
-     * @param {Array} contents - Array of content items from GitHub API
-     * @returns {Array} Filtered array of HTML file items
-     */
-    function filterHtmlFiles(contents) {
-      return contents.filter(item =>
-        item.type === 'file' && item.name.toLowerCase().endsWith('.html')
-      );
-    }
-
-   /**
-    * Encode a repo path but keep slashes between segments.
-    * e.g. "policy gradient/demo 1.html" -> "policy%20gradient/demo%201.html"
-    */
-   function encodePath(path) {
-     return path.split('/').map(encodeURIComponent).join('/');
-   }
-
-   /**
-    * If the index is running on github.io, try to build a site-relative pages prefix.
-    * Returns '/' for user site or '/repo/' for project site when detectable.
-    */
-   function getPagesPrefix() {
-     const parts = window.location.pathname.split('/').filter(Boolean);
-     if (parts.length > 0 && parts[0] === CONFIG.repo) {
-       return '/' + parts[0] + '/';
-     }
-     return '/';
-   }
-
-   /**
-    * Build a URL that will be rendered by the browser (so JS runs).
-    * Strategy:
-    *  1) If running on github.io, prefer the Pages-hosted URL (site-relative).
-    *  2) Otherwise use raw.githack.com (serves correct content-type and runs JS).
-    *  3) Fallback to raw.githubusercontent.com if needed.
-    */
-   function getViewUrl(file) {
-     // 1) Pages site (production)
-     if (window.location.hostname.endsWith('github.io')) {
-       const prefix = getPagesPrefix(); // e.g. '/repo/' or '/'
-       return window.location.origin + prefix + encodePath(file.path);
+         ============================================================
+       -->
+    <style>
+     /* Reset and base styles */
+     *, *::before, *::after {
+       box-sizing: border-box;
      }
 
-     // 2) githack - reliable raw HTML serving for JS demos (production CDN)
-     // raw.githack.com format: https://raw.githack.com/<owner>/<repo>/<branch>/<path>
-     // Note: raw.githack.com caches and is suitable for public demos.
-     if (CONFIG.owner && CONFIG.repo && CONFIG.branch) {
-       return `https://raw.githack.com/${CONFIG.owner}/${CONFIG.repo}/${CONFIG.branch}/${encodePath(file.path)}`;
+     body {
+       font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+       line-height: 1.6;
+       color: #1f2937;
+       background-color: #f9fafb;
+       margin: 0;
+       padding: 16px;
      }
 
-     // 3) Fallback - raw.githubusercontent
-     return `https://raw.githubusercontent.com/${CONFIG.owner}/${CONFIG.repo}/${CONFIG.branch}/${encodePath(file.path)}`;
-   }
-    /**
-     * Create the HTML for a folder section with its files
-     * @param {string} folderName - Name of the folder
-     * @param {Array} files - Array of HTML file items
-     * @returns {string} HTML string for the folder section
-     */
-    function createFolderSection(folderName, files) {
-      const folderIcon = `<svg class="folder-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`;
+     /* Container */
+     .container {
+       max-width: 900px;
+       margin: 0 auto;
+     }
 
-      let fileListHtml;
-      if (files.length === 0) {
-        fileListHtml = '<div class="empty-folder">No HTML demos found in this folder.</div>';
-      } else {
-        const fileItems = files.map(file => {
-          const previewUrl = getViewUrl(file);
-          return `
+     /* Header */
+     header {
+       text-align: center;
+       margin-bottom: 24px;
+       padding-bottom: 16px;
+       border-bottom: 1px solid #e5e7eb;
+     }
+
+     h1 {
+       font-size: 1.75rem;
+       margin: 0 0 8px 0;
+       color: #111827;
+     }
+
+     .subtitle {
+       color: #6b7280;
+       font-size: 0.95rem;
+       margin: 0;
+     }
+
+     /* Info box for rate limits */
+     .info-box {
+       background-color: #eff6ff;
+       border: 1px solid #bfdbfe;
+       border-radius: 8px;
+       padding: 12px 16px;
+       margin-bottom: 20px;
+       font-size: 0.9rem;
+     }
+
+     .info-box summary {
+       cursor: pointer;
+       color: #1d4ed8;
+       font-weight: 500;
+     }
+
+     .info-box p {
+       margin: 8px 0 0 0;
+       color: #374151;
+     }
+
+     /* Token input section */
+     .token-section {
+       margin-top: 12px;
+       display: flex;
+       flex-wrap: wrap;
+       gap: 8px;
+       align-items: center;
+     }
+
+     .token-section label {
+       font-size: 0.85rem;
+       color: #374151;
+     }
+
+     .token-section input {
+       flex: 1;
+       min-width: 200px;
+       padding: 6px 10px;
+       border: 1px solid #d1d5db;
+       border-radius: 4px;
+       font-size: 0.9rem;
+     }
+
+     .token-section button {
+       padding: 6px 14px;
+       background-color: #2563eb;
+       color: white;
+       border: none;
+       border-radius: 4px;
+       cursor: pointer;
+       font-size: 0.9rem;
+     }
+
+     .token-section button:hover {
+       background-color: #1d4ed8;
+     }
+
+     /* Loading state */
+     .loading {
+       text-align: center;
+       padding: 40px 20px;
+       color: #6b7280;
+     }
+
+     .spinner {
+       display: inline-block;
+       width: 24px;
+       height: 24px;
+       border: 3px solid #e5e7eb;
+       border-top-color: #3b82f6;
+       border-radius: 50%;
+       animation: spin 0.8s linear infinite;
+       margin-bottom: 12px;
+     }
+
+     @keyframes spin {
+       to { transform: rotate(360deg); }
+     }
+
+     /* Error message */
+     .error {
+       background-color: #fef2f2;
+       border: 1px solid #fecaca;
+       color: #991b1b;
+       padding: 16px;
+       border-radius: 8px;
+       margin-bottom: 20px;
+     }
+
+     .error strong {
+       display: block;
+       margin-bottom: 4px;
+     }
+
+     /* Folder sections */
+     .folder-section {
+       background-color: white;
+       border: 1px solid #e5e7eb;
+       border-radius: 8px;
+       margin-bottom: 16px;
+       overflow: hidden;
+     }
+
+     .folder-header {
+       background-color: #f3f4f6;
+       padding: 12px 16px;
+       font-weight: 600;
+       color: #374151;
+       border-bottom: 1px solid #e5e7eb;
+       display: flex;
+       align-items: center;
+       gap: 8px;
+     }
+
+     .folder-icon {
+       color: #6b7280;
+     }
+
+     /* File list */
+     .file-list {
+       list-style: none;
+       margin: 0;
+       padding: 0;
+     }
+
+     .file-item {
+       padding: 12px 16px;
+       border-bottom: 1px solid #f3f4f6;
+       display: flex;
+       flex-wrap: wrap;
+       align-items: center;
+       gap: 8px 16px;
+     }
+
+     .file-item:last-child {
+       border-bottom: none;
+     }
+
+     .file-name {
+       font-weight: 500;
+       color: #1f2937;
+       flex: 1;
+       min-width: 150px;
+     }
+
+     .file-links {
+       display: flex;
+       gap: 12px;
+       flex-wrap: wrap;
+     }
+
+     .file-links a {
+       font-size: 0.85rem;
+       text-decoration: none;
+       padding: 4px 10px;
+       border-radius: 4px;
+       transition: background-color 0.15s;
+     }
+
+     .link-github {
+       color: #374151;
+       background-color: #f3f4f6;
+     }
+
+     .link-github:hover {
+       background-color: #e5e7eb;
+     }
+
+     .link-view {
+       color: white;
+       background-color: #10b981;
+     }
+
+     .link-view:hover {
+       background-color: #059669;
+     }
+
+     /* Empty folder message */
+     .empty-folder {
+       padding: 16px;
+       color: #6b7280;
+       font-style: italic;
+     }
+
+     /* No folders message */
+     .no-content {
+       text-align: center;
+       padding: 40px 20px;
+       color: #6b7280;
+     }
+
+     /* Footer */
+     footer {
+       margin-top: 32px;
+       padding-top: 16px;
+       border-top: 1px solid #e5e7eb;
+       text-align: center;
+       font-size: 0.85rem;
+       color: #6b7280;
+     }
+
+     footer a {
+       color: #2563eb;
+       text-decoration: none;
+     }
+
+     footer a:hover {
+       text-decoration: underline;
+     }
+
+     /* Responsive adjustments */
+     @media (max-width: 600px) {
+       body {
+         padding: 12px;
+       }
+
+       h1 {
+         font-size: 1.4rem;
+       }
+
+       .file-item {
+         flex-direction: column;
+         align-items: flex-start;
+       }
+
+       .file-name {
+         width: 100%;
+       }
+
+       .token-section {
+         flex-direction: column;
+         align-items: stretch;
+       }
+
+       .token-section input {
+         min-width: unset;
+       }
+     }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Reinforcement Learning Demos</h1>
+        <p class="subtitle">Interactive browser-based demonstrations</p>
+      </header>
+
+      <!-- Rate limit information and optional token input -->
+      <details class="info-box">
+        <summary>ℹ️ About GitHub API Rate Limits</summary>
+        <p>
+          This page uses the GitHub API to list demo files. Without authentication,
+          you're limited to <strong>60 requests per hour</strong>. If you see rate limit errors,
+          you can enter a <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">
+          Personal Access Token</a> (no special scopes needed for public repos) to increase the limit to
+          <strong>5,000 requests per hour</strong>.
+        </p>
+        <div class="token-section">
+          <label for="github-token">Personal Access Token (optional):</label>
+          <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxx">
+          <button id="reload-btn">Reload with Token</button>
+        </div>
+      </details>
+
+      <!-- Main content area - populated by JavaScript -->
+      <main id="content">
+        <div class="loading">
+          <div class="spinner"></div>
+          <div>Loading demos...</div>
+        </div>
+      </main>
+
+      <footer>
+        <p>
+          View source on
+          <a href="https://github.com/georgmartius/reinforcement-learning-demos" target="_blank" rel="noopener">
+            GitHub
+          </a>
+        </p>
+      </footer>
+    </div>
+
+    <script>
+     /**
+      * ============================================================
+      * CONFIGURATION
+      * ============================================================
+      * Change these values to use this page with a different repository.
+      */
+     const CONFIG = {
+       owner: 'georgmartius',           // GitHub username or organization
+       repo: 'reinforcement-learning-demos',  // Repository name
+       branch: 'main'                   // Default branch
+     };
+
+     /**
+      * GitHub API base URL
+      */
+     const API_BASE = 'https://api.github.com';
+
+     /**
+      * Get the authorization header if a token is provided
+      * @returns {Object} Headers object for fetch requests
+      */
+     function getHeaders() {
+       const headers = {
+         'Accept': 'application/vnd.github+json'
+       };
+       const token = document.getElementById('github-token').value.trim();
+       if (token) {
+         headers['Authorization'] = `Bearer ${token}`;
+       }
+       return headers;
+     }
+
+     /**
+      * Fetch contents of a path in the repository
+      * Uses encodeURIComponent to handle paths with spaces or special characters
+      * @param {string} path - Path within the repository (empty string for root)
+      * @returns {Promise<Array>} Array of content items
+      */
+     async function fetchContents(path = '') {
+       // Build the API URL, encoding the path to handle spaces and special characters
+       const encodedPath = path ? encodeURIComponent(path) : '';
+       const url = `${API_BASE}/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${encodedPath}`;
+
+       const response = await fetch(url, { headers: getHeaders() });
+
+       if (!response.ok) {
+         const errorData = await response.json().catch(() => ({}));
+         const errorMessage = errorData.message || response.statusText;
+
+         // Check for rate limit
+         if (response.status === 403 && errorMessage.includes('rate limit')) {
+           throw new Error(
+             'GitHub API rate limit exceeded. Please wait or add a Personal Access Token above to increase your limit.'
+           );
+         }
+
+         throw new Error(`GitHub API error: ${errorMessage} (${response.status})`);
+       }
+
+       return response.json();
+     }
+
+     /**
+      * Filter for directories (excluding hidden folders like .git)
+      * @param {Array} contents - Array of content items from GitHub API
+      * @returns {Array} Filtered array of directory items
+      */
+     function filterDirectories(contents) {
+       return contents.filter(
+         item =>
+           item.type === 'dir' &&
+               !item.name.startsWith('.') &&
+               item.name.toLowerCase() !== 'docs'
+       );
+     }
+
+
+     /**
+      * Filter for HTML files
+      * @param {Array} contents - Array of content items from GitHub API
+      * @returns {Array} Filtered array of HTML file items
+      */
+     function filterHtmlFiles(contents) {
+       return contents.filter(item =>
+         item.type === 'file' && item.name.toLowerCase().endsWith('.html')
+       );
+     }
+
+     /**
+      * Encode a repo path but keep slashes between segments.
+      * e.g. "policy gradient/demo 1.html" -> "policy%20gradient/demo%201.html"
+      */
+     function encodePath(path) {
+       return path.split('/').map(encodeURIComponent).join('/');
+     }
+
+     /**
+      * If the index is running on github.io, try to build a site-relative pages prefix.
+      * Returns '/' for user site or '/repo/' for project site when detectable.
+      */
+     function getPagesPrefix() {
+       const parts = window.location.pathname.split('/').filter(Boolean);
+       if (parts.length > 0 && parts[0] === CONFIG.repo) {
+         return '/' + parts[0] + '/';
+       }
+       return '/';
+     }
+
+     /**
+      * Build a URL that will be rendered by the browser (so JS runs).
+      * Strategy:
+      *  1) If running on github.io, prefer the Pages-hosted URL (site-relative).
+      *  2) Otherwise use raw.githack.com (serves correct content-type and runs JS).
+      *  3) Fallback to raw.githubusercontent.com if needed.
+      */
+     function getViewUrl(file) {
+       // 1) Pages site (production)
+       if (window.location.hostname.endsWith('github.io')) {
+         const prefix = getPagesPrefix(); // e.g. '/repo/' or '/'
+         return window.location.origin + prefix + encodePath(file.path);
+       }
+
+       // 2) githack - reliable raw HTML serving for JS demos (production CDN)
+       // raw.githack.com format: https://raw.githack.com/<owner>/<repo>/<branch>/<path>
+       // Note: raw.githack.com caches and is suitable for public demos.
+       if (CONFIG.owner && CONFIG.repo && CONFIG.branch) {
+         return `https://raw.githack.com/${CONFIG.owner}/${CONFIG.repo}/${CONFIG.branch}/${encodePath(file.path)}`;
+       }
+
+       // 3) Fallback - raw.githubusercontent
+       return `https://raw.githubusercontent.com/${CONFIG.owner}/${CONFIG.repo}/${CONFIG.branch}/${encodePath(file.path)}`;
+     }
+
+
+     /**
+      * Create the HTML for a folder section with its files
+      * @param {string} folderName - Name of the folder
+      * @param {Array} files - Array of HTML file items
+      * @returns {string} HTML string for the folder section
+      */
+     function createFolderSection(folderName, files) {
+       const folderIcon = `<svg class="folder-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>`;
+
+       let fileListHtml;
+       if (files.length === 0) {
+         fileListHtml = '<div class="empty-folder">No HTML demos found in this folder.</div>';
+       } else {
+         const fileItems = files.map(file => {
+           const previewUrl = getViewUrl(file);
+           return `
             <li class="file-item">
               <span class="file-name">${escapeHtml(file.name)}</span>
               <div class="file-links">
@@ -517,11 +523,11 @@
               </div>
             </li>
           `;
-        }).join('');
-        fileListHtml = `<ul class="file-list">${fileItems}</ul>`;
-      }
+         }).join('');
+         fileListHtml = `<ul class="file-list">${fileItems}</ul>`;
+       }
 
-      return `
+       return `
         <section class="folder-section">
           <div class="folder-header">
             ${folderIcon}
@@ -530,105 +536,105 @@
           ${fileListHtml}
         </section>
       `;
-    }
+     }
 
-    /**
-     * Escape HTML special characters to prevent XSS
-     * @param {string} str - String to escape
-     * @returns {string} Escaped string
-     */
-    function escapeHtml(str) {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
-    }
+     /**
+      * Escape HTML special characters to prevent XSS
+      * @param {string} str - String to escape
+      * @returns {string} Escaped string
+      */
+     function escapeHtml(str) {
+       const div = document.createElement('div');
+       div.textContent = str;
+       return div.innerHTML;
+     }
 
-    /**
-     * Display an error message in the content area
-     * @param {string} message - Error message to display
-     */
-    function showError(message) {
-      const contentEl = document.getElementById('content');
-      contentEl.innerHTML = `
+     /**
+      * Display an error message in the content area
+      * @param {string} message - Error message to display
+      */
+     function showError(message) {
+       const contentEl = document.getElementById('content');
+       contentEl.innerHTML = `
         <div class="error">
           <strong>Error loading demos</strong>
           ${escapeHtml(message)}
         </div>
       `;
-    }
+     }
 
-    /**
-     * Main function to load and display all demos
-     */
-    async function loadDemos() {
-      const contentEl = document.getElementById('content');
+     /**
+      * Main function to load and display all demos
+      */
+     async function loadDemos() {
+       const contentEl = document.getElementById('content');
 
-      // Show loading state
-      contentEl.innerHTML = `
+       // Show loading state
+       contentEl.innerHTML = `
         <div class="loading">
           <div class="spinner"></div>
           <div>Loading demos...</div>
         </div>
       `;
 
-      try {
-        // Step 1: Fetch repository root contents
-        const rootContents = await fetchContents('');
+       try {
+         // Step 1: Fetch repository root contents
+         const rootContents = await fetchContents('');
 
-        // Step 2: Get all directories (excluding hidden ones)
-        const directories = filterDirectories(rootContents);
+         // Step 2: Get all directories (excluding hidden ones)
+         const directories = filterDirectories(rootContents);
 
-        if (directories.length === 0) {
-          contentEl.innerHTML = `
+         if (directories.length === 0) {
+           contentEl.innerHTML = `
             <div class="no-content">
               <p>No demo folders found in this repository.</p>
               <p>Add HTML files to subdirectories to see them listed here.</p>
             </div>
           `;
-          return;
-        }
+           return;
+         }
 
-        // Step 3: For each directory, fetch its contents and filter HTML files
-        const folderData = await Promise.all(
-          directories.map(async (dir) => {
-            try {
-              const contents = await fetchContents(dir.name);
-              const htmlFiles = filterHtmlFiles(contents);
-              return {
-                name: dir.name,
-                files: htmlFiles,
-                error: null
-              };
-            } catch (err) {
-              // If a single folder fails, record the error but continue
-              return {
-                name: dir.name,
-                files: [],
-                error: err.message
-              };
-            }
-          })
-        );
+         // Step 3: For each directory, fetch its contents and filter HTML files
+         const folderData = await Promise.all(
+           directories.map(async (dir) => {
+             try {
+               const contents = await fetchContents(dir.name);
+               const htmlFiles = filterHtmlFiles(contents);
+               return {
+                 name: dir.name,
+                 files: htmlFiles,
+                 error: null
+               };
+             } catch (err) {
+               // If a single folder fails, record the error but continue
+               return {
+                 name: dir.name,
+                 files: [],
+                 error: err.message
+               };
+             }
+           })
+         );
 
-        // Step 4: Filter to only folders with HTML files (or errors to show)
-        const foldersWithContent = folderData.filter(
-          folder => folder.files.length > 0 || folder.error
-        );
+         // Step 4: Filter to only folders with HTML files (or errors to show)
+         const foldersWithContent = folderData.filter(
+           folder => folder.files.length > 0 || folder.error
+         );
 
-        if (foldersWithContent.length === 0) {
-          contentEl.innerHTML = `
+         if (foldersWithContent.length === 0) {
+           contentEl.innerHTML = `
             <div class="no-content">
               <p>No HTML demo files found in any folder.</p>
               <p>Add .html files to subdirectories to see them listed here.</p>
             </div>
           `;
-          return;
-        }
+           return;
+         }
 
-        // Step 5: Build and display the HTML for all folders
-        const sectionsHtml = foldersWithContent.map(folder => {
-          if (folder.error) {
-            return `
+         // Step 5: Build and display the HTML for all folders
+         const sectionsHtml = foldersWithContent.map(folder => {
+           if (folder.error) {
+             return `
               <section class="folder-section">
                 <div class="folder-header">
                   📁 ${escapeHtml(folder.name)}
@@ -638,39 +644,39 @@
                 </div>
               </section>
             `;
-          }
-          return createFolderSection(folder.name, folder.files);
-        }).join('');
+           }
+           return createFolderSection(folder.name, folder.files);
+         }).join('');
 
-        contentEl.innerHTML = sectionsHtml;
+         contentEl.innerHTML = sectionsHtml;
 
-      } catch (err) {
-        showError(err.message);
-      }
-    }
+       } catch (err) {
+         showError(err.message);
+       }
+     }
 
-    /**
-     * Initialize the page
-     */
-    function init() {
-      // Load demos on page load
-      loadDemos();
+     /**
+      * Initialize the page
+      */
+     function init() {
+       // Load demos on page load
+       loadDemos();
 
-      // Set up reload button for when user enters a token
-      document.getElementById('reload-btn').addEventListener('click', () => {
-        loadDemos();
-      });
+       // Set up reload button for when user enters a token
+       document.getElementById('reload-btn').addEventListener('click', () => {
+         loadDemos();
+       });
 
-      // Also reload on Enter key in token field
-      document.getElementById('github-token').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          loadDemos();
-        }
-      });
-    }
+       // Also reload on Enter key in token field
+       document.getElementById('github-token').addEventListener('keypress', (e) => {
+         if (e.key === 'Enter') {
+           loadDemos();
+         }
+       });
+     }
 
-    // Start the application
-    init();
-  </script>
-</body>
+     // Start the application
+     init();
+    </script>
+  </body>
 </html>
