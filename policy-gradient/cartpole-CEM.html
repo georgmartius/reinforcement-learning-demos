@@ -399,7 +399,7 @@
      }
 
      async function trainingLoop() {
-       const opts = getOpts();
+       let opts = getOpts();
 
        // Apply hidden units choice at training start and then lock control
        const huEl = document.getElementById('hiddenUnits');
