@@ -453,7 +453,7 @@
     function getPreviewUrl(downloadUrl) {
       // htmlpreview.github.io renders GitHub raw file URLs
       // URL-encode the download URL to handle special characters
-      return `https://htmlpreview.github.io/?${encodeURIComponent(downloadUrl)}`;
+      return `https://htmlpreview.github.io/?${encodeURI(f.download_url)}`;
     }
 
     /**
