@@ -384,11 +384,11 @@
      */
     function getHeaders() {
       const headers = {
-        'Accept': 'application/vnd.github.v3+json'
+        'Accept': 'application/vnd.github+json'
       };
       const token = document.getElementById('github-token').value.trim();
       if (token) {
-        headers['Authorization'] = `token ${token}`;
+        headers['Authorization'] = `Bearer ${token}`;
       }
       return headers;
     }
@@ -452,7 +452,8 @@
      */
     function getPreviewUrl(downloadUrl) {
       // htmlpreview.github.io renders GitHub raw file URLs
-      return `https://htmlpreview.github.io/?${downloadUrl}`;
+      // URL-encode the download URL to handle special characters
+      return `https://htmlpreview.github.io/?${encodeURIComponent(downloadUrl)}`;
     }
 
     /**
