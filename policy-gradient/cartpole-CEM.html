@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>CartPole with CEM (Deterministic Continuous Policy)</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+    <style>
+     body { font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 16px; }
+     .row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+     .panel { border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
+     #canvas { background: #f9fafb; border: 1px solid #ddd; border-radius: 8px; }
+     .controls label { display:block; margin: 6px 0 2px; }
+     .controls input[type="number"], .controls select { width: 140px; }
+     .grid { display: grid; grid-template-columns: auto auto; gap: 6px 12px; align-items: center; }
+     .stat { min-width: 220px; }
+     button { padding: 6px 12px; }
+     #chart { background: #fff; border: 1px solid #ddd; border-radius: 8px; }
+     .muted { color:#6b7280; }
+    </style>
+  </head>
+  <body>
+    <h2>CEM on CartPole with Deterministic Continuous Policy (a = tanh(f(s)))</h2>
+
+    <div class="row">
+      <canvas id="canvas" width="640" height="220"></canvas>
+
+      <div class="panel">
+        <div class="stat">Trajectories evaluated: <span id="episodes">0</span></div>
+        <div class="stat">Last trajectory return: <span id="lastReturn">0</span></div>
+        <div class="stat">Avg return (100): <span id="avgReturn">0</span></div>
+        <div class="stat">Last length: <span id="lastLen">0</span></div>
+        <hr/>
+        <div class="stat">Preview action a (tanh output): <span id="previewAction">0.00</span></div>
+      </div>
+
+      <!-- New: CEM stats panel -->
+      <div class="panel">
+        <div style="font-weight:600; margin-bottom:6px;">CEM statistics</div>
+        <div class="stat">Parameters: <span id="paramCount">0</span></div>
+        <div class="stat">σ min: <span id="sigmaMin">0.000</span></div>
+        <div class="stat">σ avg: <span id="sigmaAvg">0.000</span></div>
+        <div class="stat">σ max: <span id="sigmaMax">0.000</span></div>
+        <div class="muted" style="margin-top:6px;">Updated after init and each iteration.</div>
+      </div>
+
+      <div class="panel controls">
+        <div class="grid">
+          <!-- New: hidden units control -->
+          <label>Hidden units</label>
+          <input id="hiddenUnits" type="number" step="1" min="1" value="32" />
+          <label>Max steps per episode</label>
+          <input id="maxSteps" type="number" step="10" value="500" />
+          <label>Trajectories / iteration (K)</label>
+          <input id="trajPerIter" type="number" step="1" value="50" />
+          <label>Elites (Ne)</label>
+          <input id="numElites" type="number" step="1" value="10" />
+          <label>Update rate (α)</label>
+          <input id="alpha" type="number" step="0.01" value="0.2" />
+          <label>Initial std (σ₀)</label>
+          <input id="initStd" type="number" step="0.01" value="0.5" />
+          <label>Min std (σmin)</label>
+          <input id="minStd" type="number" step="0.0001" value="0.001" />
+          <label>Preview after each iteration</label>
+          <input id="doPreview" type="checkbox" checked />
+          <label>Manual step delay (ms)</label>
+          <input id="stepDelay" type="number" step="20" value="0" />
+          <label>Sampling seed</label>
+          <input id="seed" type="number" step="1" value="0" />
+        </div>
+        <div style="margin-top:10px;">
+          <button id="startBtn">Train</button>
+          <button id="pauseBtn">Pause</button>
+          <button id="stepBtn">Test 1 episode</button>
+          <button id="resetBtn">Reset</button>
+        </div>
+        <p class="note">Policy outputs a ∈ [-1,1]; env applies force = a · F.</p>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:12px;">
+      <div style="margin-bottom:6px;">Training progress</div>
+      <canvas id="chart" width="960" height="240"></canvas>
+    </div>
+
+    <script>
+     // =================== Environment: CartPole (continuous action) ===================
+     class CartPole {
+       constructor(seed=0) {
+         this.gravity = 9.8;
+         this.masscart = 1.0;
+         this.masspole = 0.1;
+         this.total_mass = this.masscart + this.masspole;
+         this.length = 0.5; // half the pole's length
+         this.polemass_length = this.masspole * this.length;
+         this.force_mag = 10.0; // maximum magnitude; applied as a * force_mag
+         this.tau = 0.02; // seconds between state updates
+         this.theta_threshold_radians = 12 * Math.PI / 180;
+         this.x_threshold = 2.4;
+         this.np = this._rng(seed);
+         this.reset();
+       }
+       _rng(seed) {
+         let s = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) >>> 0;
+         return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return (s & 0xfffffff) / 0xfffffff; };
+       }
+       reset() {
+         this.state = [
+           (this.np()-0.5)*0.1,  // x
+           (this.np()-0.5)*0.1,  // x_dot
+           (this.np()-0.5)*0.2,  // theta
+           (this.np()-0.5)*0.1   // theta_dot
+         ];
+         this.steps = 0;
+         return this.state.slice();
+       }
+       // action: real in [-1, 1]
+       step(action) {
+         let a = Math.max(-1, Math.min(1, action));
+         let [x, x_dot, theta, theta_dot] = this.state;
+         const force = a * this.force_mag;
+         const costheta = Math.cos(theta), sintheta = Math.sin(theta);
+
+         const temp = (force + this.polemass_length * theta_dot * theta_dot * sintheta) / this.total_mass;
+         const thetaacc = (this.gravity * sintheta - costheta * temp) /
+         (this.length * (4.0/3.0 - this.masspole * costheta * costheta / this.total_mass));
+         const xacc = temp - this.polemass_length * thetaacc * costheta / this.total_mass;
+
+         x += this.tau * x_dot;
+         x_dot += this.tau * xacc;
+         theta += this.tau * theta_dot;
+         theta_dot += this.tau * thetaacc;
+
+         this.state = [x, x_dot, theta, theta_dot];
+         this.steps += 1;
+
+         const done =
+         x < -this.x_threshold || x > this.x_threshold ||
+         theta < -this.theta_threshold_radians || theta > this.theta_threshold_radians;
+
+         const reward = done ? 0 : 1; // +1 per step alive
+         return {state: this.state.slice(), reward, done, act: a};
+       }
+     }
+
+     // =================== Policy model: a = tanh(f(s)) ===================
+     const obsDim = 4;
+     function buildPolicy(hidden=32) {
+       const model = tf.sequential();
+       model.add(tf.layers.dense({
+         units: hidden, inputShape: [obsDim], activation: 'tanh', kernelInitializer: 'glorotUniform'
+       }));
+       model.add(tf.layers.dense({
+         units: 1, activation: 'tanh', kernelInitializer: 'glorotUniform'
+       }));
+       return model;
+     }
+     let policy = buildPolicy(32);
+
+     // =================== Weights flatten/unflatten ===================
+     function flattenWeights(model) {
+       const ws = model.getWeights();
+       const shapes = ws.map(t => ({ shape: t.shape.slice(), size: t.size }));
+       let total = 0;
+       for (const t of ws) total += t.size;
+       const flat = new Float32Array(total);
+       let offset = 0;
+       ws.forEach(t => { flat.set(t.dataSync(), offset); offset += t.size; });
+       return { flat, shapes };
+     }
+     function setFlatWeights(model, flat, shapes) {
+       const tensors = [];
+       let offset = 0;
+       for (const {shape, size} of shapes) {
+         const slice = flat.subarray(offset, offset + size);
+         const t = tf.tensor(slice, shape);
+         tensors.push(t);
+         offset += size;
+       }
+       model.setWeights(tensors);
+       tensors.forEach(t => t.dispose());
+     }
+
+     // =================== RNG ===================
+     function makeRng(seed=0) {
+       let s = Math.imul(seed ^ 0x85ebca6b, 0xc2b2ae35) >>> 0;
+       const u = () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return (s & 0xfffffff)/0xfffffff; };
+       const n = () => { const u1 = Math.max(1e-12, u()); const u2 = Math.max(1e-12, u()); return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2); };
+       return { u, n };
+     }
+
+     // =================== Training utilities ===================
+     let env = new CartPole(0);
+     let trainedEpisodes = 0;
+     let returnsHistory = [];
+
+     async function runEpisodeDeterministic(env, maxSteps, render=false, renderDelayMs=0) {
+       let state = env.reset();
+       let totalR = 0, steps = 0, done=false, lastAct = 0;
+       while (!done && steps < maxSteps) {
+         const aT = tf.tidy(() => policy.predict(tf.tensor2d([state])));
+         const a = aT.dataSync()[0];
+         aT.dispose();
+
+         const {state: ns, reward, done: d, act} = env.step(a);
+         totalR += reward;
+         state = ns; steps++; done = d; lastAct = act;
+
+         if (render && steps % 2 === 0) {
+           updateActionUI(lastAct);
+           drawEnv(env);
+           if (renderDelayMs > 0) await new Promise(r => setTimeout(r, renderDelayMs));
+           await tf.nextFrame();
+         }
+       }
+       return { totalR, steps, lastAct };
+     }
+
+     // =================== UI / Chart / Rendering ===================
+     const canvas = document.getElementById('canvas');
+     const ctx = canvas.getContext('2d');
+     function drawEnv(env) {
+       const [x,, theta,] = env.state;
+       ctx.clearRect(0,0,canvas.width, canvas.height);
+       ctx.strokeStyle = '#999'; ctx.lineWidth = 2;
+       ctx.beginPath(); ctx.moveTo(20, 180); ctx.lineTo(620, 180); ctx.stroke();
+       const xpix = 60 + (x + env.x_threshold) * (520 / (2*env.x_threshold));
+       const cartW = 50, cartH = 30;
+       ctx.fillStyle = '#374151';
+       ctx.fillRect(xpix - cartW/2, 150, cartW, cartH);
+       const poleLenPix = env.length * 200;
+       const cx = xpix, cy = 150;
+       const px = cx + poleLenPix * Math.sin(theta);
+       const py = cy - poleLenPix * Math.cos(theta);
+       ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 6;
+       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+       ctx.fillStyle = '#111827';
+       ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI*2); ctx.fill();
+     }
+
+     function updateStats(ret, len) {
+       returnsHistory.push(ret);
+       if (returnsHistory.length > 2000) returnsHistory.shift();
+       trainedEpisodes++;
+       document.getElementById('episodes').textContent = String(trainedEpisodes);
+       document.getElementById('lastReturn').textContent = ret.toFixed(0);
+       const avg = returnsHistory.slice(-100).reduce((a,b)=>a+b,0)/(Math.min(returnsHistory.length,100)||1);
+       document.getElementById('avgReturn').textContent = avg.toFixed(1);
+       document.getElementById('lastLen').textContent = String(len);
+       drawChart();
+     }
+
+     function updateActionUI(a) {
+       document.getElementById('previewAction').textContent = a.toFixed(2);
+     }
+
+     // New: CEM stats updater
+     function updateCemStats() {
+       const pcEl = document.getElementById('paramCount');
+       const sMinEl = document.getElementById('sigmaMin');
+       const sAvgEl = document.getElementById('sigmaAvg');
+       const sMaxEl = document.getElementById('sigmaMax');
+       if (!cem || !cem.mu || !cem.sigma) {
+         pcEl.textContent = '0';
+         sMinEl.textContent = '0.000';
+         sAvgEl.textContent = '0.000';
+         sMaxEl.textContent = '0.000';
+         return;
+       }
+       const n = cem.mu.length|0;
+       pcEl.textContent = String(n);
+       let mn = Infinity, mx = -Infinity, sum = 0;
+       for (let i=0;i<cem.sigma.length;i++) {
+         const v = cem.sigma[i];
+         if (v < mn) mn = v;
+         if (v > mx) mx = v;
+         sum += v;
+       }
+       const avg = cem.sigma.length ? sum / cem.sigma.length : 0;
+       sMinEl.textContent = mn.toFixed(3);
+       sAvgEl.textContent = avg.toFixed(3);
+       sMaxEl.textContent = mx.toFixed(3);
+     }
+
+     const chart = document.getElementById('chart');
+     const cctx = chart.getContext('2d');
+     function drawChart() {
+       const w = chart.width, h = chart.height;
+       cctx.clearRect(0,0,w,h);
+       cctx.strokeStyle = '#e5e7eb';
+       cctx.lineWidth = 1;
+       cctx.beginPath(); cctx.moveTo(40, 10); cctx.lineTo(40, h-30); cctx.lineTo(w-10, h-30); cctx.stroke();
+       if (returnsHistory.length === 0) return;
+
+       const data = returnsHistory;
+       const N = data.length;
+       const maxY = Math.max(50, Math.max(...data));
+       const minY = 0;
+
+       cctx.fillStyle = '#6b7280';
+       cctx.font = '12px system-ui';
+       for (let y=0; y<=maxY; y+=Math.max(10, Math.floor(maxY/5))) {
+         const py = mapY(y, minY, maxY, h);
+         cctx.fillText(String(y), 8, py+4);
+         cctx.strokeStyle = '#f3f4f6';
+         cctx.beginPath(); cctx.moveTo(40, py); cctx.lineTo(w-10, py); cctx.stroke();
+       }
+
+       const startXIdx = Math.max(0, N - 2000);
+       const visible = data.slice(startXIdx);
+       const firstEpisodeNumber = startXIdx + 1;
+       const lastEpisodeNumber = N;
+       const tickCountTarget = 8;
+       const visibleCount = visible.length;
+       const rawStep = Math.max(1, Math.ceil(visibleCount / tickCountTarget));
+       const step = niceStep(rawStep);
+
+       cctx.fillStyle = '#6b7280';
+       cctx.textAlign = 'center';
+       cctx.textBaseline = 'top';
+       for (let i=0; i<visibleCount; i+=step) {
+         const episodeNum = firstEpisodeNumber + i;
+         const x = mapX(i, 0, visibleCount-1, w);
+         cctx.strokeStyle = '#e5e7eb';
+         cctx.beginPath(); cctx.moveTo(x, h-30); cctx.lineTo(x, h-26); cctx.stroke();
+         cctx.fillText(String(episodeNum), x, h-24);
+       }
+       const lastX = mapX(visibleCount-1, 0, visibleCount-1, w);
+       cctx.fillText(String(lastEpisodeNumber), lastX, h-24);
+
+       cctx.strokeStyle = '#3b82f6';
+       cctx.lineWidth = 1.5;
+       cctx.beginPath();
+       visible.forEach((v,i) => {
+         const x = mapX(i, 0, visibleCount-1, w);
+         const y = mapY(v, minY, maxY, h);
+         if (i===0) cctx.moveTo(x,y); else cctx.lineTo(x,y);
+       });
+       cctx.stroke();
+
+       const ma = movingAverage(data, 100).slice(startXIdx);
+       cctx.strokeStyle = '#f59e0b';
+       cctx.lineWidth = 2;
+       cctx.beginPath();
+       ma.forEach((v,i) => {
+         const x = mapX(i, 0, ma.length-1, w);
+         const y = mapY(v, minY, maxY, h);
+         if (i===0) cctx.moveTo(x,y); else cctx.lineTo(x,y);
+       });
+       cctx.stroke();
+
+       cctx.textAlign = 'left';
+       cctx.textBaseline = 'alphabetic';
+       cctx.fillStyle = '#111827';
+       cctx.fillText('Return', 100, 18);
+       cctx.fillStyle = '#3b82f6';
+       cctx.fillRect(70, 10, 20, 4);
+       cctx.fillStyle = '#111827';
+       cctx.fillText('moving average return (100)', 240, 18);
+       cctx.fillStyle = '#f59e0b';
+       cctx.fillRect(200, 10, 20, 4);
+
+       cctx.fillStyle = '#111827';
+       cctx.textAlign = 'center';
+       cctx.textBaseline = 'bottom';
+       cctx.fillText('Episode', (w-10 + 40)/2, h-2);
+
+       function mapX(i,i0,i1,width){ const left=40,right=width-10; if(i1<=i0) return left; return left+(right-left)*(i-i0)/(i1-i0); }
+       function mapY(v,vmin,vmax,height){ const top=10,bottom=height-30; const t=(v-vmin)/Math.max(1e-6,(vmax-vmin)); return bottom - t*(bottom-top); }
+       function niceStep(s){ const pow10=Math.pow(10,Math.floor(Math.log10(s))); const scaled=s/pow10; let nice; if(scaled<=1)nice=1; else if(scaled<=2)nice=2; else if(scaled<=5)nice=5; else nice=10; return nice*pow10; }
+     }
+     function movingAverage(arr, k) {
+       const out=[]; let s=0;
+       for (let i=0;i<arr.length;i++){ s+=arr[i]; if(i>=k) s-=arr[i-k]; out.push(s/Math.min(k,i+1)); }
+       return out;
+     }
+
+     function updatePreviewFromState(state) {
+       const aT = tf.tidy(() => policy.predict(tf.tensor2d([state])));
+       const a = aT.dataSync()[0];
+       aT.dispose();
+       updateActionUI(a);
+     }
+
+     // =================== CEM loop ===================
+     let training = false;
+     let cem = { mu:null, sigma:null, shapes:null, rng:null };
+
+     function getOpts() {
+       return {
+         maxSteps: parseInt(document.getElementById('maxSteps').value, 10),
+         K: parseInt(document.getElementById('trajPerIter').value, 10),
+         Ne: parseInt(document.getElementById('numElites').value, 10),
+         alpha: parseFloat(document.getElementById('alpha').value),
+         initStd: parseFloat(document.getElementById('initStd').value),
+         minStd: parseFloat(document.getElementById('minStd').value),
+         doPreview: document.getElementById('doPreview').checked,
+         seed: parseInt(document.getElementById('seed').value, 10) || 0,
+       };
+     }
+
+     async function trainingLoop() {
+       const opts = getOpts();
+
+       // Apply hidden units choice at training start and then lock control
+       const huEl = document.getElementById('hiddenUnits');
+       const hidden = Math.max(1, parseInt(huEl.value || '32', 10));
+       try { policy.dispose(); } catch(e) {}
+       policy = buildPolicy(hidden);
+       huEl.disabled = true; // lock until reset
+
+       const { flat: w0, shapes } = flattenWeights(policy);
+       if (!cem.mu || !cem.sigma || !cem.shapes) {
+         cem.shapes = shapes;
+         cem.mu = new Float32Array(w0);
+         cem.sigma = new Float32Array(w0.length); cem.sigma.fill(Math.max(1e-6, opts.initStd));
+         cem.rng = makeRng(opts.seed);
+       }
+       updateCemStats();
+
+       while (training) {
+         const K = Math.max(1, opts.K);
+         const Ne = Math.min(Math.max(1, opts.Ne), K);
+
+         const candidates = new Array(K);
+         const scores = new Array(K);
+         const stepsArr = new Array(K);
+
+         // Sample and evaluate
+         for (let i=0;i<K;i++) {
+           const theta = new Float32Array(cem.mu.length);
+           for (let j=0;j<theta.length;j++) theta[j] = cem.mu[j] + cem.sigma[j] * cem.rng.n();
+           setFlatWeights(policy, theta, cem.shapes);
+
+           const ep = await runEpisodeDeterministic(env, opts.maxSteps, false);
+           candidates[i] = theta;
+           scores[i] = ep.totalR;
+           stepsArr[i] = ep.steps;
+
+           updateStats(ep.totalR, ep.steps);
+           if (!training) break;
+           await tf.nextFrame();
+         }
+         if (!training) break;
+
+         // Elites
+         const idx = scores.map((v,i)=>i).sort((a,b)=>scores[b]-scores[a]).slice(0, Ne);
+
+         // Elite mean / std (diagonal)
+         const eliteMean = new Float32Array(cem.mu.length);
+         const eliteStd  = new Float32Array(cem.mu.length);
+         for (const id of idx) {
+           const v = candidates[id];
+           for (let j=0;j<eliteMean.length;j++) eliteMean[j] += v[j];
+         }
+         for (let j=0;j<eliteMean.length;j++) eliteMean[j] /= Ne;
+
+         for (const id of idx) {
+           const v = candidates[id];
+           for (let j=0;j<eliteStd.length;j++) { const d = v[j]-eliteMean[j]; eliteStd[j] += d*d; }
+         }
+         for (let j=0;j<eliteStd.length;j++) eliteStd[j] = Math.sqrt(Math.max(0, eliteStd[j]/Ne));
+
+         // Distribution update with smoothing
+         const a = Math.min(1, Math.max(0, opts.alpha));
+         const minStd = Math.max(1e-8, opts.minStd);
+         for (let j=0;j<cem.mu.length;j++) {
+           cem.mu[j] = (1 - a) * cem.mu[j] + a * eliteMean[j];
+           const newStd = (1 - a) * cem.sigma[j] + a * eliteStd[j];
+           cem.sigma[j] = Math.max(minStd, newStd);
+         }
+
+         // Set policy to mean and preview
+         setFlatWeights(policy, cem.mu, cem.shapes);
+         updateCemStats();
+
+         opts = getOpts();
+         if (opts.doPreview) {
+           const epPrev = await runEpisodeDeterministic(env, opts.maxSteps,  true, 0);
+           document.getElementById('lastReturn').textContent = epPrev.totalR.toFixed(0);
+           document.getElementById('lastLen').textContent = String(epPrev.steps);
+           drawEnv(env);
+         }
+
+         await tf.nextFrame();
+       }
+     }
+
+     // =================== Buttons ===================
+     document.getElementById('startBtn').onclick = () => {
+       if (!training) { training = true; trainingLoop(); }
+     };
+     document.getElementById('pauseBtn').onclick = () => {
+       training = false; // hiddenUnits remains disabled until Reset
+     };
+     document.getElementById('stepBtn').onclick = async () => {
+       const opts = getOpts();
+       const delay = parseInt(document.getElementById('stepDelay').value, 10) || 0;
+       const ep = await runEpisodeDeterministic(env, opts.maxSteps,  true, delay);
+       document.getElementById('lastReturn').textContent = ep.totalR.toFixed(0);
+       document.getElementById('lastLen').textContent = String(ep.steps);
+       drawEnv(env);
+     };
+     document.getElementById('resetBtn').onclick = () => {
+       training = false;
+       try { policy.dispose(); } catch(e) {}
+       const hidden = Math.max(1, parseInt(document.getElementById('hiddenUnits').value || '32', 10));
+       policy = buildPolicy(hidden);
+       env = new CartPole(Math.floor(Math.random()*1e6));
+       returnsHistory = []; trainedEpisodes = 0;
+       cem = { mu:null, sigma:null, shapes:null, rng:null };
+       drawEnv(env); drawChart();
+       document.getElementById('episodes').textContent = '0';
+       document.getElementById('lastReturn').textContent = '0';
+       document.getElementById('avgReturn').textContent = '0';
+       document.getElementById('lastLen').textContent = '0';
+       document.getElementById('previewAction').textContent = '0.00';
+       updatePreviewFromState(env.state);
+       // Re-enable hidden units after reset
+       document.getElementById('hiddenUnits').disabled = false;
+       updateCemStats();
+     };
+
+     // Initial draw + preview + clear CEM stats
+     drawEnv(env); drawChart();
+     updatePreviewFromState(env.state);
+     updateCemStats();
+    </script>
+  </body>
+</html>
