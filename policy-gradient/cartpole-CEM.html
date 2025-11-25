@@ -239,7 +239,7 @@
 
      function updateStats(ret, len) {
        returnsHistory.push(ret);
-       if (returnsHistory.length > 2000) returnsHistory.shift();
+       // if (returnsHistory.length > 2000) returnsHistory.shift();
        trainedEpisodes++;
        document.getElementById('episodes').textContent = String(trainedEpisodes);
        document.getElementById('lastReturn').textContent = ret.toFixed(0);
